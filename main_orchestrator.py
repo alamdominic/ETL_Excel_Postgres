@@ -5,6 +5,10 @@ import os
 from datetime import datetime
 
 import pandas as pd
+from dotenv import load_dotenv
+
+# Cargar variables de entorno desde .env
+load_dotenv()
 
 # Modulos propios
 from utils.send_email import send_email_report
@@ -60,13 +64,9 @@ def export_excel_to_postgres(
     try:
         # Asignar tabla según la hoja
         if sheet_name == "COMISIONES":
-            # Descomentar para produccion
-            # table_name = '"DataMart".medios_cobro_comisiones'
-            table_name = "excel_etl_testing.test_data_insertions_comisiones"
+            table_name = os.getenv("SCHEMA_TABLE_COMISIONES")
         elif sheet_name == "COBRANZA":
-            # Descomentar para produccion
-            # table_name = '"DataMart".medios_cobro'
-            table_name = "excel_etl_testing.test_data_insertions_cobranza"
+            table_name = os.getenv("SCHEMA_TABLE_COBRANZA")
         else:
             error_message = (
                 f"Hoja '{sheet_name}' no reconocida. No se realizará ninguna operación."
@@ -174,7 +174,7 @@ def export_excel_to_postgres(
 
 # RUTA DEL ARCHIVO EXCEL LOCAL (configurable vía variable de entorno)
 EXCEL_PATH = os.getenv(
-    "EXCEL_FILE_PATH", r"excel_docs\PAPEL DE TRABAJO MEDIOS DE COBRO.xlsx"
+    "EXCEL_FILE_PATH", r"C:\Users\Administrador\OneDrive - LaZarza\ETL_Cobranza_Comisiones\ETL_Excel_Postgres\excel\PAPEL DE TRABAJO MEDIOS DE COBRO.xlsx"
 )
 # # TABLE_NAME = "DataMart.presupuestos_planeacion" - teoricamente esto ya se maneja dentro de la funcion
 # TABLE_NAME = "excel_etl_testing.test_data_insertions_cobranza"  # pruebas en local

@@ -72,6 +72,7 @@ venv.bak
 /excel_docs/
 *.log
 *.sql
+/excel/
 db/queries/
 db/queries/cobranza.sql
 db/queries/comisiones.sql
