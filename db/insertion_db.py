@@ -8,15 +8,49 @@ from config.db_config import configPostgre
 
 
 def insert_to_database(df_missing, table_name):
-    """
-    Inserta filas faltantes en PostgreSQL usando inserción masiva.
+    """Inserta filas faltantes en PostgreSQL usando inserción masiva optimizada.
+
+    Convierte un DataFrame a formato de tuplas y ejecuta inserción masiva
+    usando exec_driver_sql con executemany, proporcionando mejor rendimiento
+    que inserciones individuales.
+
+    Consumers:
+        - Funciones ETL que requieran inserción de datos nuevos únicamente
+        - Procesos que trabajen con diferencias entre datasets
+
+    Dependencies:
+        - config.db_config.configPostgre
+        - pandas para manipulación de datos
+        - logging para trazabilidad
 
     Args:
-        df_missing (pandas.DataFrame): Filas a insertar.
-        table_name (str): Nombre de la tabla destino.
+        df_missing (pandas.DataFrame): DataFrame con las filas que deben insertarse.
+            Debe tener columnas que correspondan exactamente con la tabla destino.
+        table_name (str): Nombre completo de la tabla destino (ej. "schema.tabla").
 
     Returns:
-        None: Ejecuta la insercion en la base de datos.
+        None: Ejecuta la inserción pero no retorna valores.
+        El éxito se confirma via logs.
+
+    Side Effects:
+        - Inserta registros en la base de datos PostgreSQL
+        - Genera logs informativos del proceso
+        - Modifica el estado de la tabla destino
+
+    Data Processing:
+        - Reemplaza NaN con None (NULL en PostgreSQL)
+        - Convierte DataFrame a lista de tuplas para inserción masiva
+        - Construye query dinámicamente basada en columnas del DataFrame
+        - Usa placeholders %s para prevenir SQL injection
+
+    Error Handling:
+        - Captura y registra cualquier excepción durante inserción
+        - Hace re-raise de excepciones para manejo en nivel superior
+        - Usa transacciones para garantizar consistencia
+
+    Performance Note:
+        - Usa exec_driver_sql para inserción masiva optimizada
+        - Maneja automáticamente transacciones con engine.begin()
     """
     engine = None
 
@@ -54,9 +88,9 @@ def insert_to_database(df_missing, table_name):
             result = conn.exec_driver_sql(query, data)
 
         logging.info(
-            f"✅ Se insertaron {result.rowcount if result else len(data)} filas exitosamente en {table_name}"
+            f"Se insertaron {result.rowcount if result else len(data)} filas exitosamente en {table_name}"
         )
 
     except Exception as e:
-        logging.error(f"❌ Error en la insercion a PostgreSQL: {e}")
+        logging.error(f"Error en la insercion a PostgreSQL: {e}")
         raise

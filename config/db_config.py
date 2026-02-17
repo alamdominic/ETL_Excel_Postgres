@@ -1,5 +1,6 @@
 """PostgreSQL configuration and engine creation."""
 
+import logging
 import os
 from urllib.parse import quote_plus
 from dotenv import load_dotenv
@@ -10,19 +11,36 @@ load_dotenv()
 
 
 def configPostgre():
-    """
-    Crea y devuelve un motor de conexión (engine) SQLAlchemy para PostgreSQL.
+    """Crea y devuelve un motor de conexión (engine) SQLAlchemy para PostgreSQL.
+
+    Establece conexión utilizando psycopg2 como driver PostgreSQL con codificación
+    segura de credenciales. Maneja automáticamente caracteres especiales en contraseñas.
+
+    Consumers:
+        - utils.table_state.get_last_transfer_id
+        - utils.table_state.get_table_db_state
+        - db.insertion_upsert.insert_new_modified_records
+        - db.insertion_db.insert_to_database
+
+    Dependencies:
+        - sqlalchemy.create_engine
+        - urllib.parse.quote_plus
+        - os.getenv
+        - dotenv.load_dotenv
 
     Variables de entorno requeridas:
-        - DB_HOST_LOCAL_PG
-        - DB_USER_LOCAL_PG
-        - DB_PASSWORD_LOCAL_PG
-        - DB_NAME_LOCAL_PG
-        - DB_PORT_LOCAL_PG (opcional, default 5432)
+        - DB_HOST_LOCAL_PG: Dirección del servidor PostgreSQL
+        - DB_USER_LOCAL_PG: Usuario de base de datos
+        - DB_PASSWORD_LOCAL_PG: Contraseña (se codifica automáticamente)
+        - DB_NAME_LOCAL_PG: Nombre de la base de datos
+        - DB_PORT_LOCAL_PG: Puerto (opcional, default 5432)
 
     Returns:
-        sqlalchemy.engine.Engine | None: Engine listo para usar, o None si falta
-        configuracion.
+        sqlalchemy.engine.Engine | None: Engine configurado y listo para usar,
+        o None si faltan variables de entorno requeridas.
+
+    Raises:
+        Exception: Si hay error en la creación del engine (conexión, credenciales, etc.)
     """
 
     # Cambiado a la variable de entorno local para pruebas en localhost DB_HOST --> DB_HOST_LOCAL_PG
@@ -31,12 +49,9 @@ def configPostgre():
     DB_PASSWORD = os.getenv("DB_PASSWORD_LOCAL_PG")
     DB_NAME = os.getenv("DB_NAME_LOCAL_PG")
     DB_PORT = os.getenv("DB_PORT_LOCAL_PG", "5432")
-    print(
-        f"Intentando conectar a DB con host: {DB_HOST}, user: {DB_USER}, port: {DB_PORT}"
-    )
+
     # Verificación básica de que las variables existen
     if not all([DB_HOST, DB_USER, DB_PASSWORD, DB_NAME]):
-        print("Error: Faltan variables de entorno para la conexión a la DB.")
         return None
 
     try:
@@ -48,11 +63,10 @@ def configPostgre():
         return engine
 
     except Exception as e:
-        print(f"Error al crear conexion con la DB: {e}")
         return None
 
 
 if __name__ == "__main__":
     engine = configPostgre()
     if engine:
-        print("Conexión a PostgreSQL exitosa.")
+        logging.info("Conexión a PostgreSQL exitosa.")

@@ -13,7 +13,36 @@ NUMERIC_COLUMNS = {"importe", "año", "no_de_transferencia"}
 
 
 def _normalize_text(value):
-    """Normalize text for consistent comparisons and storage."""
+    """Normaliza texto para comparaciones consistentes y almacenamiento.
+
+    Limpia y estandariza cadenas de texto removiendo espacios extras,
+    normalizando caracteres Unicode y convirtiendo a minúsculas para
+    garantizar comparaciones consistentes entre datos de Excel y BD.
+
+    Internal function consumed by:
+        - _normalize_dataframe
+
+    Dependencies:
+        - unicodedata.normalize (NFKD)
+        - unicodedata.combining
+
+    Args:
+        value: Valor a normalizar. Puede ser str, None, o cualquier tipo.
+
+    Returns:
+        str | Any: Cadena normalizada si es texto, valor original si no es str.
+
+    Normalization Process:
+        1. Retorna valor original si es None o no es string
+        2. Trim y colapsa espacios múltiples a uno solo
+        3. Descomposición NFKD para separar caracteres compuestos
+        4. Remueve marcas diacríticas (acentos, tildes)
+        5. Convierte a minúsculas
+
+    Example:
+        Ángel Máximo -> angel maximo
+        \"  Texto   con espacios  \" -> \"texto con espacios\"
+    """
     if value is None or not isinstance(value, str):
         return value
 
@@ -28,7 +57,31 @@ def _normalize_text(value):
 
 
 def _normalize_dataframe(df):
-    """Normalize all object columns in a DataFrame."""
+    """Normaliza todas las columnas de texto (object) en un DataFrame.
+
+    Aplica normalización de texto a todas las columnas de tipo 'object'
+    para estandarizar datos antes de inserción o comparación con BD.
+
+    Internal function consumed by:
+        - insert_new_modified_records
+
+    Dependencies:
+        - _normalize_text
+        - pandas DataFrame operations
+
+    Args:
+        df (pandas.DataFrame): DataFrame a normalizar.
+
+    Returns:
+        pandas.DataFrame: Copia del DataFrame con columnas de texto normalizadas.
+        Columnas numéricas y otros tipos permanecen sin cambios.
+
+    Processing:
+        - Identifica columnas tipo 'object' (texto)
+        - Aplica _normalize_text a cada valor en esas columnas
+        - Preserva estructura y tipos de otras columnas
+        - Crea copia para evitar modificar el DataFrame original
+    """
     normalized = df.copy()
     text_columns = normalized.select_dtypes(include=["object"]).columns
     for col in text_columns:
@@ -37,7 +90,34 @@ def _normalize_dataframe(df):
 
 
 def _clean_numeric_columns(df, numeric_columns):
-    """Coerce numeric columns to numbers, invalid values become NaN."""
+    """Convierte columnas numéricas a números, valores inválidos se vuelven NaN.
+
+    Aplica coerción numérica a columnas específicas para garantizar
+    tipos consistentes antes de inserción en BD, evitando errores
+    de tipo de dato.
+
+    Internal function consumed by:
+        - insert_new_modified_records
+
+    Dependencies:
+        - pandas.to_numeric
+
+    Args:
+        df (pandas.DataFrame): DataFrame a procesar.
+        numeric_columns (set | list): Conjunto de nombres de columnas
+            que deben ser numéricas.
+
+    Returns:
+        pandas.DataFrame: Copia del DataFrame con columnas numéricas convertidas.
+        Valores no convertibles se transforman a NaN.
+
+    Processing:
+        - Itera sobre numeric_columns que existan en el DataFrame
+        - Aplica pd.to_numeric con errors='coerce'
+        - Valores como texto, fechas mal formateadas -> NaN
+        - Números válidos se mantienen como float/int
+        - Columnas no especificadas permanecen sin cambios
+    """
     cleaned = df.copy()
     for col in numeric_columns:
         if col in cleaned.columns:
@@ -46,13 +126,43 @@ def _clean_numeric_columns(df, numeric_columns):
 
 
 def _convert_timestamp_to_date(df):
-    """Convert Timestamp columns to date format (YYYY-MM-DD) for PostgreSQL."""
+    """Convierte columnas Timestamp a formato date (YYYY-MM-DD) para PostgreSQL.
+
+    Transforma columnas datetime64 a formato date puro, removiendo
+    información de hora para compatibilidad con campos DATE en PostgreSQL
+    y evitar problemas de zona horaria.
+
+    Internal function consumed by:
+        - insert_new_modified_records
+
+    Dependencies:
+        - pandas.to_datetime
+        - pandas DataFrame operations
+
+    Args:
+        df (pandas.DataFrame): DataFrame con posibles columnas datetime.
+
+    Returns:
+        pandas.DataFrame: Copia del DataFrame con columnas datetime
+        convertidas a date. Otras columnas permanecen sin cambios.
+
+    Processing:
+        - Identifica columnas de tipo 'datetime64'
+        - Convierte a datetime con errors='coerce' (inválidos -> NaT)
+        - Extrae solo la parte de fecha (.dt.date)
+        - Resultado compatible con campos PostgreSQL DATE
+        - Preserva NaT como None para valores NULL en BD
+
+    Note:
+        - Remueve información de hora permanentemente
+        - Útil para campos que solo requieren fecha (sin timestamp)
+    """
     converted = df.copy()
     # Buscar columnas de tipo datetime/timestamp
-    datetime_columns = converted.select_dtypes(include=['datetime64']).columns
+    datetime_columns = converted.select_dtypes(include=["datetime64"]).columns
     for col in datetime_columns:
         # Convertir Timestamp a solo fecha (sin hora)
-        converted[col] = pd.to_datetime(converted[col], errors='coerce').dt.date
+        converted[col] = pd.to_datetime(converted[col], errors="coerce").dt.date
     return converted
 
 

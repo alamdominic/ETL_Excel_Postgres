@@ -15,12 +15,15 @@ def send_email_report(subject, body, recipient, attachment_path):
     entorno a través de `emailCredentials()`) y se conecta al servidor SMTP de Gmail
     (puerto 587 con TLS) para enviar el mensaje.
 
-    Registra un mensaje de éxito o un error de envío en el log.
+    Soporta múltiples destinatarios mediante string separado por comas o lista.
 
     Args:
         subject (str): El asunto del correo electrónico.
         body (str): El contenido principal del cuerpo del correo (texto plano).
-        recipient (str): La dirección de correo electrónico del destinatario.
+        recipient (str or list): Destinatario(s). Puede ser:
+            - String con un email: "user@example.com"
+            - String con múltiples emails: "user1@example.com,user2@example.com"
+            - Lista de emails: ["user1@example.com", "user2@example.com"]
         attachment_path (str): La ruta completa del archivo a adjuntar (ej. log o PDF).
             El adjunto es omitido si la ruta no existe o es None.
 
@@ -31,10 +34,23 @@ def send_email_report(subject, body, recipient, attachment_path):
     # Obtener credenciales desde variables de entorno
     sender_email, sender_password = emailCredentials()
 
+    # Procesar destinatarios (soportar múltiples formatos)
+    if isinstance(recipient, list):
+        recipients_list = recipient
+        recipients_str = ", ".join(recipient)
+    elif isinstance(recipient, str):
+        if "," in recipient:
+            recipients_list = [email.strip() for email in recipient.split(",")]
+        else:
+            recipients_list = [recipient.strip()]
+        recipients_str = recipient
+    else:
+        raise ValueError("El parámetro 'recipient' debe ser un string o una lista")
+
     # Crear correo
     message = MIMEMultipart()
     message["From"] = sender_email
-    message["To"] = recipient
+    message["To"] = recipients_str
     message["Subject"] = subject
 
     # Cuerpo del mensaje
@@ -58,7 +74,10 @@ def send_email_report(subject, body, recipient, attachment_path):
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
             server.login(sender_email, sender_password)
-            server.send_message(message)
-            logging.info(f"Correo enviado a {recipient} con asunto: {subject}")
+            # sendmail requiere lista de destinatarios
+            server.sendmail(sender_email, recipients_list, message.as_string())
+            logging.info(
+                f"Correo enviado a {len(recipients_list)} destinatario(s): {recipients_str} con asunto: {subject}"
+            )
     except Exception as e:
         logging.error(f"Error al enviar el correo: {e}")

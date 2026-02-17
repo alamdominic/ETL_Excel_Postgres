@@ -8,15 +8,29 @@ logger = logging.getLogger(__name__)
 
 
 def get_last_transfer_id(table_name, id_column="no de transferencia"):
-    """
-    Obtiene el último valor del id_column en la tabla ordenado de forma descendente.
+    """Obtiene el último valor del id_column en la tabla ordenado de forma descendente.
+
+    Ejecuta consulta SQL para encontrar el valor máximo de una columna específica,
+    típicamente usada para determinar desde dónde continuar procesamiento incremental.
+
+    Consumers:
+        - main_orchestrator.export_excel_to_postgres
+
+    Dependencies:
+        - config.db_config.configPostgre
+        - sqlalchemy.text
+        - logging
 
     Args:
-        table_name (str): Nombre completo de la tabla (schema.tabla).
-        id_column (str): Nombre de la columna a buscar (default: "no de transferencia").
+        table_name (str): Nombre completo de la tabla incluyendo schema (ej. "schema.tabla").
+        id_column (str): Nombre de la columna a consultar. Default: "no de transferencia".
 
     Returns:
-        int | None: El último valor del id_column, o None si la tabla está vacía o hay error.
+        int | None: El último (mayor) valor encontrado en id_column,
+        o None si la tabla está vacía o ocurre algún error.
+
+    Raises:
+        Exception: Errores de conexión o ejecución SQL se capturan y registran en log.
     """
     try:
         engine = configPostgre()
@@ -48,14 +62,41 @@ def get_last_transfer_id(table_name, id_column="no de transferencia"):
 
 
 def get_table_db_state(table_name, id_column):
-    """
-    Returns information about the table:
-    1. Whether it exists.
-    2. The total row count.
-    3. A dictionary of records if an id_column is provided (for UPSERT).
+    """Obtiene información completa del estado de una tabla en la base de datos.
+
+    Consulta metadatos y datos de la tabla para determinar su existencia,
+    cantidad de registros y crear un diccionario indexado por ID para
+    operaciones de comparación y UPSERT.
+
+    Consumers:
+        - upsert.tracker_changes.track_changes (indirectamente)
+        - Funciones que requieren estado completo de tabla para comparaciones
+
+    Dependencies:
+        - config.db_config.configPostgre
+        - sqlalchemy.text
+        - logging
+
+    Args:
+        table_name (str): Nombre completo de la tabla incluyendo schema.
+        id_column (str): Nombre de la columna que sirve como clave para indexar.
+
+    Returns:
+        dict: Diccionario con estructura:
+            {
+                "exists": bool,  # True si la tabla existe
+                "count": int,    # Número total de registros (no usado actualmente)
+                "records_dict": dict  # {id_value: {col: val, ...}}
+            }
 
     Note:
-        The record keys keep the original database type for `id_column`.
+        - Las claves del records_dict mantienen el tipo original de la BD
+        - Solo incluye registros donde id_column no es NULL
+        - Si la tabla no existe o hay error, retorna estado "vacío"
+        - El campo "count" está implementado pero no se usa actualmente
+
+    Raises:
+        Exception: Errores de BD se capturan, registran en log y retornan estado vacío.
     """
     state = {"exists": False, "count": 0, "records_dict": {}}
 
