@@ -204,11 +204,26 @@ def export_excel_to_postgres(
     logging.info(f"Inicio proceso hoja: {sheet_name} | {start_time}")
 
     try:
+        # Construir nombres de tablas con esquema entre comillas
+        table_name_comisiones = (
+            f'"{os.getenv("schema_tables")}".{os.getenv("table_comisiones")}'
+        )
+        table_name_cobranza = (
+            f'"{os.getenv("schema_tables")}".{os.getenv("table_cobranza")}'
+        )
+
+        # Log de debug para verificar construcción de nombres
+        logging.info(
+            f"Tabla cobranza: {table_name_cobranza}, Tabla comisiones: {table_name_comisiones}"
+        )
+
         # Asignar tabla según la hoja
         if sheet_name == "COMISIONES":
-            table_name = os.getenv("SCHEMA_TABLE_COMISIONES")
+            table_name = table_name_comisiones
+            logging.info(f'Excel hoja: "{sheet_name.lower()}" | table db: {table_name}')
         elif sheet_name == "COBRANZA":
-            table_name = os.getenv("SCHEMA_TABLE_COBRANZA")
+            table_name = table_name_cobranza
+            logging.info(f'Excel hoja: "{sheet_name.lower()}" | table db: {table_name}')
         else:
             error_message = (
                 f"Hoja '{sheet_name}' no reconocida. No se realizará ninguna operación."
@@ -222,8 +237,21 @@ def export_excel_to_postgres(
         logging.info(f"Procesando hoja '{sheet_name}' para la tabla '{table_name}'.")
 
         # 1. Obtener el último no de transferencia de la BD
-        last_transfer_id = get_last_transfer_id(table_name, id_column_db)
-        logging.info(f"Último no de transferencia en BD: {last_transfer_id}")
+        last_transfer_id, db_status = get_last_transfer_id(table_name, id_column_db)
+
+        # Validar estado de la consulta a DB
+        if db_status == "error":
+            raise ValueError(
+                f"Error de conexión a la base de datos. No se puede continuar."
+            )
+        elif db_status == "not_found":
+            raise ValueError(
+                f"La tabla '{table_name}' no existe en la base de datos. Crear la tabla primero."
+            )
+
+        logging.info(
+            f"Último no de transferencia en BD: {last_transfer_id} (estado: {db_status})"
+        )
 
         # 2. Lectura del archivo Excel local
         df_excel = xlsx_to_df(excel_path, sheet_name)
@@ -235,21 +263,71 @@ def export_excel_to_postgres(
         if id_column not in df_excel.columns:
             raise ValueError(f"La columna '{id_column}' no existe en el Excel.")
 
-        # 4. Filtrar registros nuevos (mayores al último ID en BD)
-        if last_transfer_id is not None:
-            # Convertir la columna a numérico para comparación
+        # Convertir la columna a numérico para comparaciones
+        df_excel[id_column] = pd.to_numeric(df_excel[id_column], errors="coerce")
+
+        # 4. Filtrar registros nuevos basándose en la posición del último ID de BD en Excel
+        # 4. Filtrar registros nuevos basándose en la posición del último ID de BD en Excel
+        if last_transfer_id is not None and db_status == "ok":
+            # Convertir la columna a numérico para asegurar coincidencia de tipos
             df_excel[id_column] = pd.to_numeric(df_excel[id_column], errors="coerce")
-            df_new_records = df_excel[df_excel[id_column] > last_transfer_id]
+
+            # Resetear índice para asegurar orden secuencial 0..N
+            # IMPORTANTE: Trabajamos sobre el df_excel reseteado
+            df_reset = df_excel.reset_index(drop=True)
+
+            # Buscar índices donde coincide el último ID de la BD
+            matching_indices = df_reset.index[
+                df_reset[id_column] == last_transfer_id
+            ].tolist()
+
+            if not matching_indices:
+                # El último ID de la BD no está en el Excel
+                error_msg = (
+                    f"El último 'no de transferencia' en BD ({last_transfer_id}) "
+                    f"NO se encontró en el archivo Excel. No es posible determinar el límite para nuevos registros."
+                )
+                logging.error(error_msg)
+                raise ValueError(error_msg)
+
+            # Si hay duplicados del mismo ID, tomamos el último
+            last_match_index = matching_indices[-1]
+
+            logging.info(
+                f"Punto de sincronización encontrado: ID {last_transfer_id} en fila {last_match_index} del Excel."
+            )
+
+            # Seleccionar todo lo que está POR DEBAJO de ese índice (+1 hasta el final)
+            # Aseguramos que seleccionamos todas las filas restantes
+            df_new_records = df_reset.iloc[last_match_index + 1 :].copy()
+
             logging.info(
                 f"Registros en Excel: {len(df_excel)} | "
-                f"Registros nuevos (> {last_transfer_id}): {len(df_new_records)}"
+                f"Corte en fila (0-based): {last_match_index} | "
+                f"Total filas disponibles: {len(df_reset)} | "
+                f"Registros nuevos identificados: {len(df_new_records)}"
             )
-        else:
+
+            # Debug adicional si parece que no hay nuevos registros pero debería haberlos
+            if df_new_records.empty and last_match_index < len(df_reset) - 1:
+                logging.warning(
+                    f"¡Extraño! El corte fue en {last_match_index} y el total es {len(df_reset)}, "
+                    f"debería haber {len(df_reset) - 1 - last_match_index} registros, pero df_new_records está vacío."
+                )
+
+            if not df_new_records.empty:
+                ids_preview = df_new_records[id_column].head(10).tolist()
+                logging.info(f"Primeros IDs nuevos a insertar: {ids_preview}")
+
+        elif db_status == "empty":
             # Si la tabla está vacía, insertar todos los registros
             df_new_records = df_excel
             logging.info(
                 f"Tabla vacía. Se insertarán todos los registros: {len(df_new_records)}"
             )
+        else:
+            # Estado inesperado
+            raise ValueError(f"Estado inesperado de la base de datos: {db_status}")
 
         # 5. Verificar si hay datos para insertar
         if df_new_records.empty:

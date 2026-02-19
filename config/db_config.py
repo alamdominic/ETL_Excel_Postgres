@@ -44,11 +44,11 @@ def configPostgre():
     """
 
     # Cambiado a la variable de entorno local para pruebas en localhost DB_HOST --> DB_HOST_LOCAL_PG
-    DB_HOST = os.getenv("DB_HOST_LOCAL_PG")
-    DB_USER = os.getenv("DB_USER_LOCAL_PG")
-    DB_PASSWORD = os.getenv("DB_PASSWORD_LOCAL_PG")
-    DB_NAME = os.getenv("DB_NAME_LOCAL_PG")
-    DB_PORT = os.getenv("DB_PORT_LOCAL_PG", "5432")
+    DB_HOST = os.getenv("DB_HOST")
+    DB_USER = os.getenv("DB_USER")
+    DB_PASSWORD = os.getenv("DB_PASSWORD")
+    DB_NAME = os.getenv("DB_NAME")
+    DB_PORT = os.getenv("DB_PORT", "5432")
 
     # Verificación básica de que las variables existen
     if not all([DB_HOST, DB_USER, DB_PASSWORD, DB_NAME]):

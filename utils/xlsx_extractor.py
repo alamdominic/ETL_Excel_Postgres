@@ -34,12 +34,16 @@ def xlsx_to_df(excel_path, sheet_name):
             sheet_name.upper()
         )  # Convertir a mayúsculas para evitar problemas de coincidencia
         # El uso de 'with' asegura que el archivo se cierre correctamente tras la lectura
-        with pd.ExcelFile(excel_path) as xls:
-            df = pd.read_excel(xls, sheet_name=sheet_name)
+        # Leer sin asumir headers en primera fila para inspeccionar
+        df = pd.read_excel(excel_path, sheet_name=sheet_name)
 
         # Normalizar nombres de columnas: trim + minusculas y remover columnas vacias
         df.columns = [str(col).strip().lower() for col in df.columns]
-        df = df.loc[:, [col for col in df.columns if col and col != "unnamed: 0"]]
+
+        # Eliminar filas completamente vacías
+        df.dropna(how="all", inplace=True)
+
+        df = df.loc[:, [col for col in df.columns if col and "unnamed" not in col]]
 
         if df.empty:
             logger.warning(f"El archivo o la hoja '{sheet_name}' está vacía.")

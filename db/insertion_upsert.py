@@ -12,12 +12,12 @@ logger = logging.getLogger(__name__)
 NUMERIC_COLUMNS = {"importe", "año", "no_de_transferencia"}
 
 
-def _normalize_text(value):
+def _normalize_text(value, to_upper=True):
     """Normaliza texto para comparaciones consistentes y almacenamiento.
 
     Limpia y estandariza cadenas de texto removiendo espacios extras,
-    normalizando caracteres Unicode y convirtiendo a minúsculas para
-    garantizar comparaciones consistentes entre datos de Excel y BD.
+    normalizando caracteres Unicode y convirtiendo a mayúsculas (por defecto)
+    o minúsculas para garantizar comparaciones consistentes entre datos de Excel y BD.
 
     Internal function consumed by:
         - _normalize_dataframe
@@ -28,6 +28,7 @@ def _normalize_text(value):
 
     Args:
         value: Valor a normalizar. Puede ser str, None, o cualquier tipo.
+        to_upper (bool): Si es True convierte a mayúsculas, False a minúsculas. Default: True.
 
     Returns:
         str | Any: Cadena normalizada si es texto, valor original si no es str.
@@ -37,11 +38,11 @@ def _normalize_text(value):
         2. Trim y colapsa espacios múltiples a uno solo
         3. Descomposición NFKD para separar caracteres compuestos
         4. Remueve marcas diacríticas (acentos, tildes)
-        5. Convierte a minúsculas
+        5. Convierte a mayúsculas o minúsculas según parametro
 
     Example:
-        Ángel Máximo -> angel maximo
-        \"  Texto   con espacios  \" -> \"texto con espacios\"
+        Ángel Máximo -> ANGEL MAXIMO
+        \"  Texto   con espacios  \" -> \"TEXTO CON ESPACIOS\"
     """
     if value is None or not isinstance(value, str):
         return value
@@ -53,7 +54,7 @@ def _normalize_text(value):
         for char in unicodedata.normalize("NFKD", cleaned)
         if not unicodedata.combining(char)
     )
-    return cleaned.lower()
+    return cleaned.upper() if to_upper else cleaned.lower()
 
 
 def _normalize_dataframe(df):
@@ -85,7 +86,13 @@ def _normalize_dataframe(df):
     normalized = df.copy()
     text_columns = normalized.select_dtypes(include=["object"]).columns
     for col in text_columns:
-        normalized[col] = normalized[col].apply(_normalize_text)
+        # Check if column is 'mes' (case insensitive)
+        is_mes_column = str(col).strip().lower() == "mes"
+
+        # Apply normalization with to_upper=False if it is 'mes', else True
+        normalized[col] = normalized[col].apply(
+            lambda x: _normalize_text(x, to_upper=not is_mes_column)
+        )
     return normalized
 
 
@@ -212,10 +219,20 @@ def insert_new_modified_records(df_new, df_modified, table_name, id_column):
             query_insert = (
                 f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders})"
             )
-            with engine.begin() as conn:
-                conn.exec_driver_sql(query_insert, data)
 
-            logger.info(f"INSERT: {len(data)} registros nuevos")
+            batch_size = 1000
+            total_inserted = 0
+
+            with engine.begin() as conn:
+                for i in range(0, len(data), batch_size):
+                    batch = data[i : i + batch_size]
+                    conn.exec_driver_sql(query_insert, batch)
+                    total_inserted += len(batch)
+                    logger.info(
+                        f"Insercion por lotes: {total_inserted}/{len(data)} registros procesados"
+                    )
+
+            logger.info(f"INSERT: {len(data)} registros nuevos completado exitosamente")
 
         # --- UPDATE modificados ---
         if not df_modified.empty:
@@ -238,10 +255,21 @@ def insert_new_modified_records(df_new, df_modified, table_name, id_column):
                 values.append(row[id_column])  # ID al final para el WHERE
                 data.append(tuple(values))
 
-            with engine.begin() as conn:
-                conn.exec_driver_sql(query_update, data)
+            batch_size = 1000
+            total_updated = 0
 
-            logger.info(f"UPDATE: {len(data)} registros modificados")
+            with engine.begin() as conn:
+                for i in range(0, len(data), batch_size):
+                    batch = data[i : i + batch_size]
+                    conn.exec_driver_sql(query_update, batch)
+                    total_updated += len(batch)
+                    logger.info(
+                        f"Actualizacion por lotes: {total_updated}/{len(data)} registros procesados"
+                    )
+
+            logger.info(
+                f"UPDATE: {len(data)} registros modificados completado exitosamente"
+            )
 
         logger.info("Sincronizacion completada")
 

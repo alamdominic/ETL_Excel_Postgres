@@ -26,8 +26,9 @@ def get_last_transfer_id(table_name, id_column="no de transferencia"):
         id_column (str): Nombre de la columna a consultar. Default: "no de transferencia".
 
     Returns:
-        int | None: El último (mayor) valor encontrado en id_column,
-        o None si la tabla está vacía o ocurre algún error.
+        tuple: (valor, estado)
+            - valor (int | None): El último (mayor) valor encontrado, o None si tabla vacía
+            - estado (str): "ok", "empty", "not_found", "error"
 
     Raises:
         Exception: Errores de conexión o ejecución SQL se capturan y registran en log.
@@ -36,9 +37,18 @@ def get_last_transfer_id(table_name, id_column="no de transferencia"):
         engine = configPostgre()
         if engine is None:
             logger.error("No se pudo crear el engine de PostgreSQL.")
-            return None
+            return None, "error"
 
         with engine.connect() as conn:
+            # Primero verificar si la tabla existe
+            check_query = text(f"SELECT to_regclass(:table)")
+            table_exists = conn.execute(check_query, {"table": table_name}).scalar()
+
+            if not table_exists:
+                logger.error(f'La tabla "{table_name}" no existe en la base de datos.')
+                return None, "not_found"
+
+            # Tabla existe, obtener último ID
             query = text(
                 f"""
                 SELECT "{id_column}"
@@ -51,14 +61,14 @@ def get_last_transfer_id(table_name, id_column="no de transferencia"):
 
             if result is not None:
                 logger.info(f'Último "{id_column}" en "{table_name}": {result}')
-                return result
+                return result, "ok"
             else:
-                logger.info(f'La tabla "{table_name}" está vacía.')
-                return None
+                logger.info(f'La tabla "{table_name}" existe pero está vacía.')
+                return None, "empty"
 
     except Exception as e:
         logger.error(f'Error obteniendo último "{id_column}" de "{table_name}": {e}')
-        return None
+        return None, "error"
 
 
 def get_table_db_state(table_name, id_column):
