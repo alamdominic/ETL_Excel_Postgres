@@ -62,6 +62,8 @@ def _normalize_dataframe(df):
 
     Aplica normalización de texto a todas las columnas de tipo 'object'
     para estandarizar datos antes de inserción o comparación con BD.
+    TODAS las columnas de texto se normalizan a MAYÚSCULAS para evitar
+    duplicados por inconsistencias de mayúsculas/minúsculas.
 
     Internal function consumed by:
         - insert_new_modified_records
@@ -79,19 +81,16 @@ def _normalize_dataframe(df):
 
     Processing:
         - Identifica columnas tipo 'object' (texto)
-        - Aplica _normalize_text a cada valor en esas columnas
+        - Aplica _normalize_text con to_upper=True a cada valor
         - Preserva estructura y tipos de otras columnas
         - Crea copia para evitar modificar el DataFrame original
     """
     normalized = df.copy()
     text_columns = normalized.select_dtypes(include=["object"]).columns
     for col in text_columns:
-        # Check if column is 'mes' (case insensitive)
-        is_mes_column = str(col).strip().lower() == "mes"
-
-        # Apply normalization with to_upper=False if it is 'mes', else True
+        # Normalizar todas las columnas de texto a MAYÚSCULAS para consistencia
         normalized[col] = normalized[col].apply(
-            lambda x: _normalize_text(x, to_upper=not is_mes_column)
+            lambda x: _normalize_text(x, to_upper=True)
         )
     return normalized
 

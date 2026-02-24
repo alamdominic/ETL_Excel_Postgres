@@ -11,7 +11,7 @@ load_dotenv()
 
 # Modulos propios
 from utils.send_email import send_email_report
-from utils.xlsx_extractor import xlsx_to_df
+from utils.xlsx_extractor import xlsx_to_df, export_debug_excel
 from utils.table_state import get_last_transfer_id
 from db.insertion_upsert import insert_new_modified_records
 
@@ -354,8 +354,35 @@ def export_excel_to_postgres(
             globals()["problematic_records_global"] = problematic_records
             return
 
+        # 7. GENERAR EXCEL DE DEBUGGING con datos procesados
+        # Aplicar las mismas transformaciones que se aplicarán al insertar
+        logging.info("Generando Excel de debugging con datos procesados...")
+        
+        # Importar funciones de normalización desde insertion_upsert
+        from db.insertion_upsert import (
+            _clean_numeric_columns,
+            _convert_timestamp_to_date,
+            _normalize_dataframe,
+            NUMERIC_COLUMNS,
+        )
+        
+        # Aplicar las mismas transformaciones que se aplicarán en la inserción
+        df_debug = df_clean_records.copy()
+        df_debug = _clean_numeric_columns(df_debug, NUMERIC_COLUMNS)
+        df_debug = _convert_timestamp_to_date(df_debug)
+        df_debug = _normalize_dataframe(df_debug)
+        
+        # Exportar a Excel para análisis
+        debug_file_path = export_debug_excel(df_debug, sheet_name)
+        
+        if debug_file_path:
+            logging.info(f"Archivo de debugging generado exitosamente: {debug_file_path}")
+        else:
+            logging.warning("No se pudo generar el archivo de debugging, pero el proceso continuará.")
+
+        # 8. Confirmación del usuario
         # usado para verificar que se están filtrando correctamente los registros nuevos
-        confirmation_message = f"Se encontraron {len(df_new_records)} registros nuevos."
+        confirmation_message = f"\nSe encontraron {len(df_new_records)} registros nuevos."
         if problematic_records:
             confirmation_message += (
                 f"\n- Registros válidos a insertar: {len(df_clean_records)}"
@@ -363,8 +390,11 @@ def export_excel_to_postgres(
             confirmation_message += f"\n- Registros con problemas (se excluirán): {len(problematic_records)}"
         else:
             confirmation_message += f" Todos son válidos para insertar."
+        
+        if debug_file_path:
+            confirmation_message += f"\n- Archivo de debugging generado: {os.path.basename(debug_file_path)}"
 
-        confirmation_message += "\n¿Desea continuar? (s/n): "
+        confirmation_message += "\n\n¿Desea continuar con la inserción? (s/n): "
 
         response_user = input(confirmation_message)
         if response_user.lower() != "s":
@@ -374,7 +404,7 @@ def export_excel_to_postgres(
         # Almacenar registros problemáticos para el email (variable global temporal)
         globals()["problematic_records_global"] = problematic_records
 
-        # 7. Ejecutar inserción (sin modificaciones, solo nuevos y válidos)
+        # 9. Ejecutar inserción (sin modificaciones, solo nuevos y válidos)
         df_empty = df_excel.iloc[0:0]  # DataFrame vacío para modificados
         insert_new_modified_records(df_clean_records, df_empty, table_name, id_column)
 
